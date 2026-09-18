@@ -1,0 +1,35 @@
+name: Sincronizar indicadores PMO (Dependabot + Churn -> Google Sheets)
+
+on:
+  schedule:
+    - cron: '0 7 * * *'
+  workflow_dispatch: {}
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Instalar dependências
+        run: pip install -r requirements.txt
+
+      - name: Rodar sincronização de Segurança (Dependabot)
+        env:
+          DEPENDABOT_PAT: ${{ secrets.DEPENDABOT_PAT }}
+          GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
+          GCP_SERVICE_ACCOUNT_JSON: ${{ secrets.GCP_SERVICE_ACCOUNT_JSON }}
+        run: python sync_dependabot_to_sheets.py
+
+      - name: Rodar sincronização de Churn de Código
+        env:
+          DEPENDABOT_PAT: ${{ secrets.DEPENDABOT_PAT }}
+          GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
+          GCP_SERVICE_ACCOUNT_JSON: ${{ secrets.GCP_SERVICE_ACCOUNT_JSON }}
+        run: python sync_code_churn.py
