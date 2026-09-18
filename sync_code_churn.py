@@ -76,6 +76,10 @@ def main():
 
     # Lê linhas existentes para não duplicar (chave: data da semana + produto)
     existing = ws.get(f"{COL_SEMANA}{DATA_START_ROW}:{COL_PRODUTO}{DATA_END_ROW}")
+    # A API do Sheets corta linhas em branco no final do intervalo pedido — sem
+    # completar (pad) a lista, o script "acha" menos linhas livres do que existem.
+    expected_len = DATA_END_ROW - DATA_START_ROW + 1
+    existing += [[] for _ in range(expected_len - len(existing))]
     key_to_row = {}
     free_rows = []
     for i, row in enumerate(existing):
