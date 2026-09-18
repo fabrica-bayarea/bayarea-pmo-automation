@@ -54,7 +54,10 @@ def fetch_dependabot_alerts(owner_repo: str):
         "X-GitHub-Api-Version": "2022-11-28",
     }
     alerts = []
-    url = f"{GITHUB_API}/repos/{owner_repo}/dependabot/alerts?state=all&per_page=100"
+    # Sem filtro "state": a API já retorna todos os estados por padrão.
+    # "state=all" NÃO é um valor válido para este endpoint (só aceita
+    # open/fixed/dismissed/auto_dismissed) — usá-lo faz a API devolver 0 resultados.
+    url = f"{GITHUB_API}/repos/{owner_repo}/dependabot/alerts?per_page=100"
     while url:
         resp = requests.get(url, headers=headers, timeout=30)
         if resp.status_code == 404:
@@ -123,19 +126,28 @@ def main():
 
     # Lê o bloco de dados atual (IDs já existentes) para decidir update x insert
     existing_ids = ws.get(f"{COL_ID}{DATA_START_ROW}:{COL_ID}{DATA_END_ROW}")
+    # A API do Sheets corta linhas em branco no final do intervalo pedido — sem
+    # completar (pad) a lista, o script "acha" menos linhas livres do que existem.
+    expected_len = DATA_END_ROW - DATA_START_ROW + 1
+    existing_ids += [[] for _ in range(expected_len - len(existing_ids))]
     id_to_row = {}
     for i, row in enumerate(existing_ids):
         if row and row[0]:
             id_to_row[row[0]] = DATA_START_ROW + i
 
-    known_prefixes = tuple(cfg["prefix"] + "-" for cfg in REPO_PRODUCT_MAP.values())
-    free_rows = [
-        DATA_START_ROW + i
-        for i, row in enumerate(existing_ids)
-        if (not row or not row[0]) or (row[0] and not row[0].startswith(known_prefixes))
+    # Linhas com só o ID placeholder (VUL-001, VUL-002...) e nenhum outro dado
+    # preenchido (Produto/Descrição/datas) contam como livres — esse ID nunca
+    # foi um dado real, é só numeração decorativa herdada do modelo da aba.
+    existing_full = ws.get(f"{COL_ID}{DATA_START_ROW}:{COL_DATA_ACEITE}{DATA_END_ROW}")
+    existing_full += [[] for _ in range(expected_len - len(existing_full))]
+
+    def has_real_data(row):
+        # colunas depois do ID (Produto, Descrição, datas) — índices 1 em diante
+        return any(v for v in row[1:5])
+
+    truly_free = [
+        DATA_START_ROW + i for i, row in enumerate(existing_full) if not has_real_data(row)
     ]
-    # linhas realmente livres (sem ID nenhum) primeiro
-    truly_free = [DATA_START_ROW + i for i, row in enumerate(existing_ids) if not row or not row[0]]
     free_iter = iter(truly_free)
 
     updates = []  # (a1_range, values)
