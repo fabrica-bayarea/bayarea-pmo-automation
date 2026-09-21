@@ -1,9 +1,10 @@
-name: Sincronizar indicadores PMO (Dependabot + Churn -> Google Sheets)
+name: Sincronizar indicadores PMO (Dependabot + Churn + Tutor -> Google Sheets)
 
 on:
   schedule:
-    - cron: '0 7 * * *'
-  workflow_dispatch: {}
+    # toda segunda-feira às 07:00 UTC (04:00 horário de Brasília)
+    - cron: '0 7 * * 1'
+  workflow_dispatch: {}  # permite rodar manualmente pela aba Actions, se precisar
 
 jobs:
   sync:
@@ -33,3 +34,10 @@ jobs:
           GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
           GCP_SERVICE_ACCOUNT_JSON: ${{ secrets.GCP_SERVICE_ACCOUNT_JSON }}
         run: python sync_code_churn.py
+
+      - name: Rodar sincronização do Piloto Tutor (Issues)
+        env:
+          DEPENDABOT_PAT: ${{ secrets.DEPENDABOT_PAT }}
+          GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
+          GCP_SERVICE_ACCOUNT_JSON: ${{ secrets.GCP_SERVICE_ACCOUNT_JSON }}
+        run: python sync_tutor_issues.py
