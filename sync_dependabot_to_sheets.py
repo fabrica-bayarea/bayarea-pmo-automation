@@ -38,6 +38,8 @@ DATA_END_ROW = 220
 COL_ID, COL_PRODUTO, COL_DESC = "C", "D", "E"
 COL_DATA_IDENT, COL_DATA_INICIO, COL_DATA_ACEITE = "F", "G", "H"
 COL_METODO = "K"
+COL_SEVERIDADE = "L"
+COL_LINK = "M"
 
 GITHUB_TOKEN = os.environ["DEPENDABOT_PAT"]
 GOOGLE_SHEET_ID = os.environ["GOOGLE_SHEET_ID"]
@@ -76,13 +78,21 @@ def fetch_dependabot_alerts(owner_repo: str):
     return alerts
 
 
-def map_alert_to_row(alert: dict, prefix: str, produto: str) -> dict:
+def map_alert_to_row(alert: dict, prefix: str, produto: str, owner_repo: str) -> dict:
     number = alert.get("number")
     state = alert.get("state")  # open | fixed | dismissed | auto_dismissed
     dismissed_reason = alert.get("dismissed_reason")  # fix_started | inaccurate | no_bandwidth | not_used | tolerable_risk
     advisory = alert.get("security_advisory", {}) or {}
-    severity = advisory.get("severity", "?")
-    summary = advisory.get("summary", "(sem resumo)")
+    severity_raw = (advisory.get("severity") or "").lower()
+    dependency = alert.get("dependency", {}) or {}
+    package = dependency.get("package", {}) or {}
+    pacote = package.get("name", "(pacote desconhecido)")
+    ecosystem = package.get("ecosystem", "")
+
+    # Mapeia severidade do GitHub (inglês) para rótulo em português, compatível
+    # com o dropdown já existente na coluna Severidade da planilha.
+    severidade_map = {"low": "Baixa", "medium": "Média", "high": "Alta", "critical": "Crítica"}
+    severidade = severidade_map.get(severity_raw, severity_raw.capitalize() or "—")
 
     data_identificacao = alert.get("created_at")
     data_aceite = None
@@ -93,13 +103,19 @@ def map_alert_to_row(alert: dict, prefix: str, produto: str) -> dict:
     # por padrão. Ajuste esta lógica se sua organização definir um proxy aceitável.
     data_inicio = None
 
-    descricao = f"[{severity.upper()}] {summary} (estado GitHub: {state}" + \
-                (f", motivo: {dismissed_reason}" if dismissed_reason else "") + ")"
+    # Sem resumo técnico completo por decisão de segurança: a descrição aqui é
+    # só o nome do pacote/ecossistema, o que já dá contexto de gestão sem
+    # revelar como o problema pode ser explorado. O detalhe técnico completo
+    # fica só atrás do link, que exige acesso ao repositório no GitHub.
+    descricao = f"{pacote} ({ecosystem})" if ecosystem else pacote
+    link = f"https://github.com/{owner_repo}/security/dependabot/{number}"
 
     return {
         "id": f"{prefix}-{number}",
         "produto": produto,
         "descricao": descricao[:300],
+        "severidade": severidade,
+        "link": link,
         "data_identificacao": data_identificacao,
         "data_inicio": data_inicio,
         "data_aceite": data_aceite,
@@ -158,7 +174,7 @@ def main():
         alerts = fetch_dependabot_alerts(owner_repo)
         print(f"  {len(alerts)} alerta(s) encontrados.")
         for alert in alerts:
-            record = map_alert_to_row(alert, cfg["prefix"], cfg["produto"])
+            record = map_alert_to_row(alert, cfg["prefix"], cfg["produto"], owner_repo)
             row_num = id_to_row.get(record["id"])
             if row_num is None:
                 try:
@@ -176,7 +192,10 @@ def main():
                 to_sheets_date(record["data_aceite"]),
             ]
             updates.append({"range": f"{COL_ID}{row_num}:{COL_DATA_ACEITE}{row_num}", "values": [values]})
-            updates.append({"range": f"{COL_METODO}{row_num}", "values": [[record["metodo"]]]})
+            updates.append({
+                "range": f"{COL_METODO}{row_num}:{COL_LINK}{row_num}",
+                "values": [[record["metodo"], record["severidade"], record["link"]]],
+            })
             total_synced += 1
 
     if updates:
